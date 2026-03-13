@@ -18,16 +18,16 @@ const levels = [
     orderRequired: false,
     map: [
       '##############################',
-      '#............K...............#',
-      '#.................####.......#',
-      '#.............K..............#',
-      '#....####....................#',
-      '#............####............#',
-      '#..P.....................E...#',
-      '#............####............#',
+      '#...........K................#',
+      '#.........#####..............#',
+      '#..................####......#',
+      '#....####.......#............#',
+      '#............#..#........K...#',
+      '#..P........#^^^^#.......E...#',
+      '#............####......^^^^^.#',
       '#........K...................#',
       '#...............####.........#',
-      '#......................^.....#',
+      '#............................#',
       '#............####............#',
       '#.....................####...#',
       '#.............................#',
@@ -62,8 +62,8 @@ const levels = [
     map: [
       '##############################',
       '#....1...........####........#',
-      '#............####...........E#',
-      '#..P.........................#',
+      '#............####............#',
+      '#..P.....................E...#',
       '#............####............#',
       '#.................2..........#',
       '#..####......................#',
@@ -81,9 +81,13 @@ const levels = [
 const input = {
   left: false,
   right: false,
-  jump: false,
-  jumpPressed: false
+  jump: false
 };
+
+const JUMP_BUFFER_FRAMES = 6;
+const COYOTE_FRAMES = 6;
+let jumpBuffer = 0;
+let coyoteTime = 0;
 
 const player = {
   x: 0,
@@ -279,11 +283,22 @@ function update(dt) {
   if (input.left) player.vx = -speed;
   if (input.right) player.vx = speed;
 
-  if (input.jumpPressed && player.onGround) {
+  if (player.onGround) {
+    coyoteTime = COYOTE_FRAMES;
+  } else {
+    coyoteTime = Math.max(0, coyoteTime - 1);
+  }
+
+  if (jumpBuffer > 0) {
+    jumpBuffer -= 1;
+  }
+
+  if (jumpBuffer > 0 && coyoteTime > 0) {
     player.vy = jumpPower;
     player.onGround = false;
+    jumpBuffer = 0;
+    coyoteTime = 0;
   }
-  input.jumpPressed = false;
 
   player.vy += gravity;
   if (player.vy > 14) player.vy = 14;
@@ -395,12 +410,16 @@ function startGame() {
 }
 
 function setupInput() {
+  const requestJump = () => {
+    jumpBuffer = JUMP_BUFFER_FRAMES;
+  };
+
   window.addEventListener('keydown', (event) => {
     if (event.code === 'ArrowLeft' || event.code === 'KeyA') input.left = true;
     if (event.code === 'ArrowRight' || event.code === 'KeyD') input.right = true;
     if (event.code === 'ArrowUp' || event.code === 'KeyW' || event.code === 'Space') {
       if (!input.jump) {
-        input.jumpPressed = true;
+        requestJump();
       }
       input.jump = true;
     }
@@ -420,7 +439,7 @@ function setupInput() {
     button.addEventListener('pointerdown', (event) => {
       event.preventDefault();
       if (key === 'jump') {
-        input.jumpPressed = true;
+        jumpBuffer = JUMP_BUFFER_FRAMES;
         input.jump = true;
       } else {
         input[key] = true;
@@ -452,3 +471,5 @@ startBtn.addEventListener('click', startGame);
 
 setupInput();
 resetLevel(true);
+
+
