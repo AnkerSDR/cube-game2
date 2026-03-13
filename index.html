@@ -1,0 +1,52 @@
+﻿<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Пещеры Приключений</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="app">
+    <header>
+      <div class="title">Пещеры Приключений</div>
+      <div class="subtitle">Собери руны, открой проход и доберись до выхода</div>
+    </header>
+
+    <div id="game-wrap">
+      <canvas id="game" width="960" height="540"></canvas>
+
+      <div id="hud">
+        <div id="level-name">Уровень</div>
+        <div id="rune-status">Руны: 0/0</div>
+        <div id="hint">Подсказка</div>
+      </div>
+
+      <div id="overlay">
+        <div class="panel">
+          <div class="panel-title">Управление</div>
+          <div class="panel-text">
+            ПК: `A/D` или `←/→` — движение, `W` или `Space` — прыжок
+          </div>
+          <div class="panel-text">
+            Телефон: кнопки внизу экрана
+          </div>
+          <button id="start-btn">Начать приключение</button>
+        </div>
+      </div>
+
+      <div id="touch">
+        <button id="btn-left" class="touch-btn">◀</button>
+        <button id="btn-right" class="touch-btn">▶</button>
+        <button id="btn-jump" class="touch-btn">⤒</button>
+      </div>
+    </div>
+
+    <footer>
+      Избегай шипов, читай таблички и ищи руны по порядку.
+    </footer>
+  </div>
+
+  <script src="game.js"></script>
+</body>
+</html>

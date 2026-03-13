@@ -1,0 +1,177 @@
+﻿@import url("https://fonts.googleapis.com/css2?family=Comfortaa:wght@400;700&display=swap");
+
+:root {
+  --bg-1: #0b0f1f;
+  --bg-2: #1b1f38;
+  --stone: #3b3f55;
+  --stone-dark: #2a2e43;
+  --accent: #f7c948;
+  --accent-2: #5ce1e6;
+  --danger: #ff5f6d;
+  --text: #f2f4ff;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Comfortaa", sans-serif;
+  color: var(--text);
+  background: radial-gradient(1200px 600px at 20% 10%, #1f274a, var(--bg-1));
+  min-height: 100vh;
+}
+
+#app {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+header {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.title {
+  font-size: 28px;
+  font-weight: 700;
+}
+
+.subtitle {
+  font-size: 14px;
+  color: #cbd2ff;
+}
+
+#game-wrap {
+  position: relative;
+  background: linear-gradient(160deg, #121633, #0d1024);
+  border-radius: 16px;
+  padding: 12px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+}
+
+#game {
+  width: 100%;
+  height: auto;
+  display: block;
+  background: radial-gradient(900px 400px at 70% 20%, #22284a, #0d0f23);
+  border-radius: 12px;
+}
+
+#hud {
+  position: absolute;
+  left: 18px;
+  top: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+}
+
+#hint {
+  color: var(--accent-2);
+  max-width: 260px;
+}
+
+#overlay {
+  position: absolute;
+  inset: 12px;
+  background: rgba(9, 10, 22, 0.82);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+}
+
+#overlay.hidden {
+  display: none;
+}
+
+.panel {
+  background: #151a34;
+  padding: 20px;
+  border-radius: 14px;
+  max-width: 360px;
+  text-align: center;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.panel-title {
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+
+.panel-text {
+  font-size: 13px;
+  color: #c7cffc;
+  margin-bottom: 8px;
+}
+
+#start-btn {
+  margin-top: 10px;
+  background: var(--accent);
+  color: #1d1d1d;
+  border: none;
+  border-radius: 10px;
+  padding: 10px 16px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+#touch {
+  position: absolute;
+  left: 18px;
+  right: 18px;
+  bottom: 16px;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  pointer-events: none;
+}
+
+.touch-btn {
+  pointer-events: auto;
+  width: 64px;
+  height: 64px;
+  border-radius: 14px;
+  border: none;
+  background: rgba(255, 255, 255, 0.12);
+  color: white;
+  font-size: 24px;
+  backdrop-filter: blur(6px);
+}
+
+#btn-jump {
+  background: rgba(92, 225, 230, 0.25);
+}
+
+footer {
+  font-size: 12px;
+  color: #b0b7e6;
+}
+
+@media (max-width: 700px) {
+  #app {
+    padding: 12px;
+  }
+
+  .title {
+    font-size: 22px;
+  }
+
+  #touch {
+    bottom: 10px;
+  }
+
+  .touch-btn {
+    width: 56px;
+    height: 56px;
+  }
+}
