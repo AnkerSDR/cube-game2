@@ -3,9 +3,15 @@ const ctx = canvas.getContext('2d');
 
 const uiLevel = document.getElementById('level-name');
 const uiRunes = document.getElementById('rune-status');
+const uiTime = document.getElementById('time-status');
+const uiBest = document.getElementById('best-status');
 const uiHint = document.getElementById('hint');
 const overlay = document.getElementById('overlay');
+const winOverlay = document.getElementById('win-overlay');
+const winTime = document.getElementById('win-time');
+const winBest = document.getElementById('win-best');
 const startBtn = document.getElementById('start-btn');
+const restartBtn = document.getElementById('restart-btn');
 
 const TILE = 32;
 const VIEW_W = canvas.width;
@@ -20,10 +26,10 @@ const levels = [
       '##############################',
       '#...........K................#',
       '#.........#####..............#',
-      '#..................####......#',
-      '#....####.......#............#',
+      '#..................####..B...#',
+      '#....####.......#....B.......#',
       '#............#..#........K...#',
-      '#..P........#^^^^#.......E...#',
+      '#..P........#^^^^#...B...E...#',
       '#............####......^^^^^.#',
       '#........K...................#',
       '#...............####.........#',
@@ -40,18 +46,18 @@ const levels = [
     orderRequired: true,
     map: [
       '##############################',
-      '#.....1..............####....#',
-      '#............####............#',
+      '#.....1......................#',
+      '#............####^^^^^^^^^...#',
       '#..P.....................E...#',
-      '#............####............#',
-      '#.................2..........#',
-      '#..####......................#',
+      '#......###...BBBBBBBBBBB..#..#',
+      '#.................2..B.......#',
+      '#..BBBB...BB.................#',
       '#...............####.........#',
       '#.....................3......#',
-      '#............####............#',
+      '#............#..#............#',
       '#...............^............#',
-      '#............####............#',
-      '#.............................#',
+      '#.....###....####............#',
+      '#............................#',
       '##############################'
     ]
   },
@@ -61,18 +67,18 @@ const levels = [
     orderRequired: true,
     map: [
       '##############################',
-      '#....1...........####........#',
+      '#....1.......................#',
+      '#............####.....B......#',
+      '#..P..####...........B..E....#',
       '#............####............#',
-      '#..P.....................E...#',
-      '#............####............#',
-      '#.................2..........#',
+      '#.................2...#..B...#',
       '#..####......................#',
-      '#...............####.........#',
+      '#.......###.....####.........#',
       '#.....................3......#',
+      '#............####.....#......#',
+      '#............................#',
       '#............####............#',
-      '#..........^.................#',
-      '#............####............#',
-      '#.............................#',
+      '#^^^^^^^^^^^^^^^^^^^^^^^^^^^^#',
       '##############################'
     ]
   }
@@ -92,8 +98,8 @@ let coyoteTime = 0;
 const player = {
   x: 0,
   y: 0,
-  w: 22,
-  h: 28,
+  w: 26,
+  h: 26,
   vx: 0,
   vy: 0,
   onGround: false,
@@ -106,6 +112,57 @@ let levelState = null;
 let orderProgress = 0;
 let gameRunning = false;
 let lastTime = 0;
+let globalTime = 0;
+let stars = [];
+let decorations = [];
+let runStart = 0;
+let currentTime = 0;
+let bestTime = null;
+const BEST_KEY = 'caves_best_time';
+
+function mulberry32(seed) {
+  return function () {
+    let t = (seed += 0x6d2b79f5);
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function buildStars(seed, width, height) {
+  const rand = mulberry32(seed);
+  const count = 140;
+  const result = [];
+  for (let i = 0; i < count; i++) {
+    result.push({
+      x: rand() * width,
+      y: rand() * height,
+      r: 0.6 + rand() * 1.6,
+      a: 0.25 + rand() * 0.5
+    });
+  }
+  return result;
+}
+
+function buildDecorations(seed, grid) {
+  const rand = mulberry32(seed);
+  const result = [];
+  for (let y = 1; y < grid.length - 1; y++) {
+    for (let x = 1; x < grid[y].length - 1; x++) {
+      if (grid[y][x] !== '#') continue;
+      if (grid[y - 1][x] !== '.') continue;
+      if (rand() < 0.08) {
+        result.push({
+          x: x * TILE,
+          y: y * TILE,
+          type: rand() < 0.5 ? 'crystal' : 'mushroom',
+          size: 0.7 + rand() * 0.6
+        });
+      }
+    }
+  }
+  return result;
+}
 
 function buildLevel(index) {
   const base = levels[index];
@@ -161,6 +218,9 @@ function resetLevel(fullReset) {
   if (fullReset) {
     orderProgress = 0;
   }
+  const seedBase = (levelIndex + 1) * 1337;
+  stars = buildStars(seedBase, Math.max(levelState.width, VIEW_W), VIEW_H);
+  decorations = buildDecorations(seedBase + 42, levelState.grid);
   updateHud();
 }
 
@@ -168,7 +228,8 @@ function isSolid(tx, ty) {
   if (ty < 0 || ty >= levelState.grid.length || tx < 0 || tx >= levelState.grid[0].length) {
     return true;
   }
-  return levelState.grid[ty][tx] === '#';
+  const cell = levelState.grid[ty][tx];
+  return cell === '#' || cell === 'B';
 }
 
 function isSpike(tx, ty) {
@@ -209,6 +270,8 @@ function updateHud() {
   const current = level.orderRequired ? orderProgress : levelState.runes.filter((r) => r.collected).length;
   uiRunes.textContent = `Руны: ${current}/${total}`;
   uiHint.textContent = level.hint;
+  uiTime.textContent = `Время: ${formatTime(currentTime)}`;
+  uiBest.textContent = `Рекорд: ${bestTime !== null ? formatTime(bestTime) : '--'}`;
 }
 
 function resolveCollisions(axis) {
@@ -333,16 +396,21 @@ function update(dt) {
     ) {
       levelIndex += 1;
       if (levelIndex >= levels.length) {
-        levelIndex = 0;
+        showWin();
+        return;
       }
       resetLevel(true);
     }
   }
 }
 
-function drawTile(x, y, color) {
+function drawTile(x, y, color, dark) {
   ctx.fillStyle = color;
   ctx.fillRect(x, y, TILE, TILE);
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
+  ctx.fillRect(x + 2, y + 2, TILE - 4, 4);
+  ctx.fillStyle = dark;
+  ctx.fillRect(x + TILE - 4, y + 3, 3, TILE - 6);
 }
 
 function draw() {
@@ -353,21 +421,37 @@ function draw() {
   ctx.save();
   ctx.translate(-camX, 0);
 
+  drawBackground(camX);
+
+  drawDecorations();
+
   for (let y = 0; y < levelState.grid.length; y++) {
     for (let x = 0; x < levelState.grid[y].length; x++) {
       const cell = levelState.grid[y][x];
       if (cell === '#') {
         const shade = (x + y) % 2 === 0 ? '#3b3f55' : '#2f334a';
-        drawTile(x * TILE, y * TILE, shade);
+        const dark = (x + y) % 2 === 0 ? '#2a2e43' : '#24283c';
+        drawTile(x * TILE, y * TILE, shade, dark);
+      }
+      if (cell === 'B') {
+        const base = (x + y) % 2 === 0 ? '#4a576e' : '#3e4a63';
+        const dark = (x + y) % 2 === 0 ? '#2c354a' : '#273041';
+        drawTile(x * TILE, y * TILE, base, dark);
+        ctx.fillStyle = 'rgba(92, 225, 230, 0.3)';
+        ctx.fillRect(x * TILE + 6, y * TILE + 6, TILE - 12, TILE - 12);
       }
       if (cell === '^') {
+        const spikeX = x * TILE;
+        const spikeY = y * TILE;
         ctx.fillStyle = '#ff5f6d';
         ctx.beginPath();
-        ctx.moveTo(x * TILE + 4, y * TILE + TILE - 4);
-        ctx.lineTo(x * TILE + TILE / 2, y * TILE + 4);
-        ctx.lineTo(x * TILE + TILE - 4, y * TILE + TILE - 4);
+        ctx.moveTo(spikeX + 4, spikeY + TILE - 4);
+        ctx.lineTo(spikeX + TILE / 2, spikeY + 4);
+        ctx.lineTo(spikeX + TILE - 4, spikeY + TILE - 4);
         ctx.closePath();
         ctx.fill();
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.25)';
+        ctx.fillRect(spikeX + TILE / 2 - 2, spikeY + 7, 4, 10);
       }
     }
   }
@@ -375,38 +459,75 @@ function draw() {
   for (const rune of levelState.runes) {
     if (rune.collected) continue;
     const colorMap = { K: '#f7c948', 1: '#5ce1e6', 2: '#f7c948', 3: '#ff9f43' };
-    ctx.fillStyle = colorMap[rune.type] || '#f7c948';
+    const runeColor = colorMap[rune.type] || '#f7c948';
+    ctx.save();
+    ctx.shadowColor = runeColor;
+    ctx.shadowBlur = 12;
+    ctx.fillStyle = runeColor;
     ctx.beginPath();
     ctx.arc(rune.x + 8, rune.y + 8, 7, 0, Math.PI * 2);
     ctx.fill();
+    ctx.restore();
   }
 
   const exit = levelState.exit;
-  ctx.fillStyle = runesCollected() ? '#7bff83' : '#586089';
+  const portalOpen = runesCollected();
+  ctx.save();
+  ctx.fillStyle = portalOpen ? '#7bff83' : '#586089';
   ctx.fillRect(exit.x, exit.y, TILE, TILE);
-  ctx.fillStyle = '#101422';
-  ctx.fillRect(exit.x + 8, exit.y + 8, 6, 12);
+  const pulse = portalOpen ? 0.5 + Math.sin(globalTime / 200) * 0.5 : 0.15;
+  ctx.globalAlpha = 0.6 + pulse * 0.4;
+  ctx.fillStyle = portalOpen ? '#b2ffd0' : '#2a2f45';
+  ctx.beginPath();
+  ctx.ellipse(exit.x + 16, exit.y + 16, 8 + pulse * 4, 12 + pulse * 6, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
 
-  ctx.fillStyle = '#5ce1e6';
-  ctx.fillRect(player.x, player.y, player.w, player.h);
+  drawPlayer();
 
   ctx.restore();
+  drawVignette();
 }
 
 function loop(timestamp) {
   if (!gameRunning) return;
+  globalTime = timestamp;
+  currentTime = (timestamp - runStart) / 1000;
   const dt = (timestamp - lastTime) / 16.67;
   lastTime = timestamp;
   update(dt);
   draw();
+  updateHud();
   requestAnimationFrame(loop);
 }
 
 function startGame() {
   overlay.classList.add('hidden');
+  winOverlay.classList.add('hidden');
   gameRunning = true;
+  runStart = performance.now();
+  currentTime = 0;
   lastTime = performance.now();
+  updateHud();
   requestAnimationFrame(loop);
+}
+
+function showWin() {
+  gameRunning = false;
+  currentTime = (performance.now() - runStart) / 1000;
+  if (bestTime === null || currentTime < bestTime) {
+    bestTime = currentTime;
+    localStorage.setItem(BEST_KEY, String(bestTime));
+  }
+  winTime.textContent = `Время: ${formatTime(currentTime)}`;
+  winBest.textContent = `Рекорд: ${formatTime(bestTime)}`;
+  winOverlay.classList.remove('hidden');
+}
+
+function restartGame() {
+  levelIndex = 0;
+  resetLevel(true);
+  startGame();
 }
 
 function setupInput() {
@@ -468,8 +589,99 @@ function setupInput() {
 }
 
 startBtn.addEventListener('click', startGame);
+restartBtn.addEventListener('click', restartGame);
 
 setupInput();
+bestTime = loadBestTime();
 resetLevel(true);
+updateHud();
 
+function drawBackground(camX) {
+  ctx.save();
+  ctx.translate(camX, 0);
+  const grad = ctx.createLinearGradient(0, 0, 0, VIEW_H);
+  grad.addColorStop(0, '#0e1228');
+  grad.addColorStop(0.5, '#141b3b');
+  grad.addColorStop(1, '#0b1022');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, VIEW_W, VIEW_H);
 
+  ctx.translate(-camX * 0.25, 0);
+  for (const star of stars) {
+    ctx.fillStyle = `rgba(205, 220, 255, ${star.a})`;
+    ctx.beginPath();
+    ctx.arc(star.x, star.y, star.r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawDecorations() {
+  for (const deco of decorations) {
+    if (deco.type === 'crystal') {
+      const baseX = deco.x + TILE / 2;
+      const baseY = deco.y;
+      ctx.save();
+      ctx.fillStyle = 'rgba(92, 225, 230, 0.5)';
+      ctx.beginPath();
+      ctx.moveTo(baseX, baseY - 6 * deco.size);
+      ctx.lineTo(baseX - 6 * deco.size, baseY - 2 * deco.size);
+      ctx.lineTo(baseX + 5 * deco.size, baseY - 1 * deco.size);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    } else {
+      const capX = deco.x + TILE / 2;
+      const capY = deco.y - 2;
+      ctx.fillStyle = '#ff9f43';
+      ctx.beginPath();
+      ctx.ellipse(capX, capY, 6 * deco.size, 4 * deco.size, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#6b4a2a';
+      ctx.fillRect(capX - 2 * deco.size, capY, 4 * deco.size, 6 * deco.size);
+    }
+  }
+}
+
+function drawPlayer() {
+  ctx.save();
+  ctx.fillStyle = '#5ce1e6';
+  ctx.fillRect(player.x, player.y, player.w, player.h);
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(player.x + 1, player.y + 1, player.w - 2, player.h - 2);
+  ctx.fillStyle = '#0b1022';
+  ctx.fillRect(player.x + 6, player.y + 8, 4, 4);
+  ctx.fillRect(player.x + player.w - 10, player.y + 8, 4, 4);
+  ctx.restore();
+}
+
+function drawVignette() {
+  const gradient = ctx.createRadialGradient(
+    VIEW_W / 2,
+    VIEW_H / 2,
+    VIEW_H / 4,
+    VIEW_W / 2,
+    VIEW_H / 2,
+    VIEW_H / 1.05
+  );
+  gradient.addColorStop(0, 'rgba(0, 0, 0, 0)');
+  gradient.addColorStop(1, 'rgba(0, 0, 0, 0.35)');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+}
+
+function formatTime(seconds) {
+  const total = Math.max(0, seconds);
+  const minutes = Math.floor(total / 60);
+  const secs = Math.floor(total % 60);
+  const tenths = Math.floor((total * 10) % 10);
+  return `${minutes}:${String(secs).padStart(2, '0')}.${tenths}`;
+}
+
+function loadBestTime() {
+  const raw = localStorage.getItem(BEST_KEY);
+  if (!raw) return null;
+  const value = Number(raw);
+  return Number.isFinite(value) ? value : null;
+}

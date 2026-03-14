@@ -7,6 +7,7 @@
   --stone-dark: #2a2e43;
   --accent: #f7c948;
   --accent-2: #5ce1e6;
+  --accent-3: #ff9f43;
   --danger: #ff5f6d;
   --text: #f2f4ff;
 }
@@ -54,6 +55,7 @@ header {
   border-radius: 16px;
   padding: 12px;
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
 }
 
 #game {
@@ -80,6 +82,11 @@ header {
   max-width: 260px;
 }
 
+#time-status,
+#best-status {
+  color: #d7dcff;
+}
+
 #overlay {
   position: absolute;
   inset: 12px;
@@ -94,6 +101,21 @@ header {
   display: none;
 }
 
+#win-overlay {
+  position: absolute;
+  inset: 12px;
+  background: radial-gradient(circle at 30% 20%, rgba(92, 225, 230, 0.2), rgba(9, 10, 22, 0.9));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  backdrop-filter: blur(4px);
+}
+
+#win-overlay.hidden {
+  display: none;
+}
+
 .panel {
   background: #151a34;
   padding: 20px;
@@ -101,6 +123,12 @@ header {
   max-width: 360px;
   text-align: center;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.panel-win {
+  background: radial-gradient(circle at 30% 20%, rgba(255, 255, 255, 0.12), rgba(21, 26, 52, 0.95));
+  box-shadow: 0 12px 40px rgba(15, 20, 45, 0.6), inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(92, 225, 230, 0.25);
 }
 
 .panel-title {
@@ -123,6 +151,19 @@ header {
   padding: 10px 16px;
   font-weight: 700;
   cursor: pointer;
+  box-shadow: 0 8px 20px rgba(247, 201, 72, 0.3);
+}
+
+#restart-btn {
+  margin-top: 10px;
+  background: linear-gradient(135deg, var(--accent-2), var(--accent-3));
+  color: #0b0f1f;
+  border: none;
+  border-radius: 10px;
+  padding: 10px 16px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 10px 24px rgba(92, 225, 230, 0.28);
 }
 
 #touch {

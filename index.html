@@ -19,6 +19,8 @@
       <div id="hud">
         <div id="level-name">Уровень</div>
         <div id="rune-status">Руны: 0/0</div>
+        <div id="time-status">Время: 0:00.0</div>
+        <div id="best-status">Рекорд: --</div>
         <div id="hint">Подсказка</div>
       </div>
 
@@ -32,6 +34,19 @@
             Телефон: кнопки внизу экрана
           </div>
           <button id="start-btn">Начать приключение</button>
+        </div>
+      </div>
+
+      <div id="win-overlay" class="hidden">
+        <div class="panel panel-win">
+          <div class="panel-title">Победа!</div>
+          <div class="panel-text">
+            Все пещеры пройдены. Руны собраны, путь открыт.
+          </div>
+          <div class="panel-text" id="win-time">Время: 0:00.0</div>
+          <div class="panel-text" id="win-best">Рекорд: --</div>
+          <div class="panel-text">Хочешь начать заново?</div>
+          <button id="restart-btn">Сыграть еще раз</button>
         </div>
       </div>
 
