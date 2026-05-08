@@ -12,6 +12,17 @@ const winTime = document.getElementById('win-time');
 const winBest = document.getElementById('win-best');
 const startBtn = document.getElementById('start-btn');
 const restartBtn = document.getElementById('restart-btn');
+const fullscreenBtn = document.getElementById('fullscreen-btn');
+const pauseBtn = document.getElementById('pause-btn');
+const resumeBtn = document.getElementById('resume-btn');
+const menuBtn = document.getElementById('menu-btn');
+const pauseMenuBtn = document.getElementById('pause-menu-btn');
+const gameWrap = document.getElementById('game-wrap');
+const playerNameInput = document.getElementById('player-name');
+const nameError = document.getElementById('name-error');
+const leaderboardStart = document.getElementById('leaderboard-start');
+const leaderboardWin = document.getElementById('leaderboard-win');
+const pauseOverlay = document.getElementById('pause-overlay');
 
 const TILE = 32;
 const VIEW_W = canvas.width;
@@ -104,7 +115,11 @@ const player = {
   vy: 0,
   onGround: false,
   respawnX: 0,
-  respawnY: 0
+  respawnY: 0,
+  rotation: 0,
+  targetRotation: 0,
+  spinDirection: 1,
+  spinning: false
 };
 
 let levelIndex = 0;
@@ -113,12 +128,17 @@ let orderProgress = 0;
 let gameRunning = false;
 let lastTime = 0;
 let globalTime = 0;
+let pauseStarted = 0;
 let stars = [];
 let decorations = [];
 let runStart = 0;
 let currentTime = 0;
 let bestTime = null;
+let currentPlayerName = '';
 const BEST_KEY = 'caves_best_time';
+const LEADERBOARD_KEY = 'caves_leaderboard';
+const PLAYER_NAME_KEY = 'caves_player_name';
+const MAX_LEADERS = 7;
 
 function mulberry32(seed) {
   return function () {
@@ -215,6 +235,9 @@ function resetLevel(fullReset) {
   player.respawnX = levelState.startX;
   player.respawnY = levelState.startY;
   player.onGround = false;
+  player.rotation = 0;
+  player.targetRotation = 0;
+  player.spinning = false;
   if (fullReset) {
     orderProgress = 0;
   }
@@ -272,6 +295,101 @@ function updateHud() {
   uiHint.textContent = level.hint;
   uiTime.textContent = `Время: ${formatTime(currentTime)}`;
   uiBest.textContent = `Рекорд: ${bestTime !== null ? formatTime(bestTime) : '--'}`;
+}
+
+function cleanPlayerName(name) {
+  return name.trim().replace(/\s+/g, ' ').slice(0, 16);
+}
+
+function clearInput() {
+  input.left = false;
+  input.right = false;
+  input.jump = false;
+  jumpBuffer = 0;
+}
+
+function requirePlayerName() {
+  const name = cleanPlayerName(playerNameInput.value);
+  if (!name) {
+    nameError.textContent = 'Сначала введи ник';
+    playerNameInput.classList.add('invalid');
+    playerNameInput.focus();
+    return null;
+  }
+
+  nameError.textContent = '';
+  playerNameInput.classList.remove('invalid');
+  currentPlayerName = name;
+  playerNameInput.value = name;
+  localStorage.setItem(PLAYER_NAME_KEY, name);
+  return name;
+}
+
+function loadLeaderboard() {
+  const raw = localStorage.getItem(LEADERBOARD_KEY);
+  if (!raw) return [];
+
+  try {
+    const records = JSON.parse(raw);
+    if (!Array.isArray(records)) return [];
+    return records
+      .filter((record) => record && typeof record.name === 'string' && Number.isFinite(record.time))
+      .sort((a, b) => a.time - b.time)
+      .slice(0, MAX_LEADERS);
+  } catch (error) {
+    return [];
+  }
+}
+
+function saveLeaderboard(records) {
+  localStorage.setItem(LEADERBOARD_KEY, JSON.stringify(records.slice(0, MAX_LEADERS)));
+}
+
+function addLeaderboardResult(name, time) {
+  const records = loadLeaderboard();
+  records.push({
+    name,
+    time,
+    date: new Date().toISOString()
+  });
+  records.sort((a, b) => a.time - b.time);
+  saveLeaderboard(records);
+  return records.slice(0, MAX_LEADERS);
+}
+
+function renderLeaderboard(list) {
+  const records = loadLeaderboard();
+  list.innerHTML = '';
+
+  if (records.length === 0) {
+    const item = document.createElement('li');
+    item.className = 'leaderboard-empty';
+    item.textContent = 'Пока нет результатов';
+    list.appendChild(item);
+    return;
+  }
+
+  for (const record of records) {
+    const item = document.createElement('li');
+    const row = document.createElement('div');
+    const name = document.createElement('span');
+    const time = document.createElement('span');
+
+    row.className = 'leaderboard-row';
+    name.className = 'leaderboard-name';
+    time.className = 'leaderboard-time';
+    name.textContent = record.name;
+    time.textContent = formatTime(record.time);
+
+    row.append(name, time);
+    item.appendChild(row);
+    list.appendChild(item);
+  }
+}
+
+function renderLeaderboards() {
+  renderLeaderboard(leaderboardStart);
+  renderLeaderboard(leaderboardWin);
 }
 
 function resolveCollisions(axis) {
@@ -341,6 +459,7 @@ function update(dt) {
   const speed = 3.2;
   const gravity = 0.6;
   const jumpPower = -11;
+  const spinSpeed = 0.22;
 
   player.vx = 0;
   if (input.left) player.vx = -speed;
@@ -359,8 +478,17 @@ function update(dt) {
   if (jumpBuffer > 0 && coyoteTime > 0) {
     player.vy = jumpPower;
     player.onGround = false;
+    player.spinDirection = player.vx < 0 ? -1 : 1;
+    player.targetRotation += player.spinDirection * Math.PI / 2;
+    player.spinning = true;
     jumpBuffer = 0;
     coyoteTime = 0;
+  }
+
+  if (player.spinning) {
+    const remaining = player.targetRotation - player.rotation;
+    const step = Math.sign(remaining) * Math.min(Math.abs(remaining), spinSpeed);
+    player.rotation += step;
   }
 
   player.vy += gravity;
@@ -371,6 +499,10 @@ function update(dt) {
 
   player.y += player.vy;
   resolveCollisions('y');
+  if (player.onGround && player.spinning) {
+    player.rotation = player.targetRotation;
+    player.spinning = false;
+  }
 
   checkSpikes();
 
@@ -502,8 +634,11 @@ function loop(timestamp) {
 }
 
 function startGame() {
+  if (!requirePlayerName()) return;
+  clearInput();
   overlay.classList.add('hidden');
   winOverlay.classList.add('hidden');
+  pauseOverlay.classList.add('hidden');
   gameRunning = true;
   runStart = performance.now();
   currentTime = 0;
@@ -514,20 +649,68 @@ function startGame() {
 
 function showWin() {
   gameRunning = false;
+  clearInput();
   currentTime = (performance.now() - runStart) / 1000;
   if (bestTime === null || currentTime < bestTime) {
     bestTime = currentTime;
     localStorage.setItem(BEST_KEY, String(bestTime));
   }
+  addLeaderboardResult(currentPlayerName, currentTime);
+  renderLeaderboards();
   winTime.textContent = `Время: ${formatTime(currentTime)}`;
   winBest.textContent = `Рекорд: ${formatTime(bestTime)}`;
   winOverlay.classList.remove('hidden');
 }
 
 function restartGame() {
+  enterFullscreen();
   levelIndex = 0;
   resetLevel(true);
   startGame();
+}
+
+function pauseGame() {
+  if (!gameRunning) return;
+  gameRunning = false;
+  pauseStarted = performance.now();
+  clearInput();
+  pauseOverlay.classList.remove('hidden');
+}
+
+function resumeGame() {
+  if (gameRunning || pauseOverlay.classList.contains('hidden')) return;
+  runStart += performance.now() - pauseStarted;
+  lastTime = performance.now();
+  gameRunning = true;
+  pauseOverlay.classList.add('hidden');
+  requestAnimationFrame(loop);
+}
+
+function showMainMenu() {
+  gameRunning = false;
+  clearInput();
+  levelIndex = 0;
+  currentTime = 0;
+  resetLevel(true);
+  winOverlay.classList.add('hidden');
+  pauseOverlay.classList.add('hidden');
+  overlay.classList.remove('hidden');
+  renderLeaderboards();
+  updateHud();
+}
+
+function enterFullscreen() {
+  if (!document.fullscreenElement && gameWrap.requestFullscreen) {
+    gameWrap.requestFullscreen().catch(() => {});
+  }
+}
+
+function toggleFullscreen() {
+  if (document.fullscreenElement) {
+    document.exitFullscreen();
+  } else {
+    enterFullscreen();
+  }
 }
 
 function setupInput() {
@@ -536,6 +719,21 @@ function setupInput() {
   };
 
   window.addEventListener('keydown', (event) => {
+    if (event.target === playerNameInput) {
+      if (event.code === 'Enter' && requirePlayerName()) {
+        enterFullscreen();
+        startGame();
+      }
+      return;
+    }
+    if (event.code === 'Escape') {
+      if (gameRunning) {
+        pauseGame();
+      } else if (!pauseOverlay.classList.contains('hidden')) {
+        resumeGame();
+      }
+      return;
+    }
     if (event.code === 'ArrowLeft' || event.code === 'KeyA') input.left = true;
     if (event.code === 'ArrowRight' || event.code === 'KeyD') input.right = true;
     if (event.code === 'ArrowUp' || event.code === 'KeyW' || event.code === 'Space') {
@@ -588,11 +786,29 @@ function setupInput() {
   bindButton(btnJump, 'jump');
 }
 
-startBtn.addEventListener('click', startGame);
+startBtn.addEventListener('click', () => {
+  if (requirePlayerName()) {
+    enterFullscreen();
+    startGame();
+  }
+});
 restartBtn.addEventListener('click', restartGame);
+fullscreenBtn.addEventListener('click', toggleFullscreen);
+pauseBtn.addEventListener('click', pauseGame);
+resumeBtn.addEventListener('click', resumeGame);
+menuBtn.addEventListener('click', showMainMenu);
+pauseMenuBtn.addEventListener('click', showMainMenu);
+playerNameInput.addEventListener('input', () => {
+  if (cleanPlayerName(playerNameInput.value)) {
+    nameError.textContent = '';
+    playerNameInput.classList.remove('invalid');
+  }
+});
 
 setupInput();
 bestTime = loadBestTime();
+playerNameInput.value = localStorage.getItem(PLAYER_NAME_KEY) || '';
+renderLeaderboards();
 resetLevel(true);
 updateHud();
 
@@ -644,15 +860,24 @@ function drawDecorations() {
 }
 
 function drawPlayer() {
+  const cx = player.x + player.w / 2;
+  const cy = player.y + player.h / 2;
+
   ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(player.rotation);
   ctx.fillStyle = '#5ce1e6';
-  ctx.fillRect(player.x, player.y, player.w, player.h);
+  ctx.fillRect(-player.w / 2, -player.h / 2, player.w, player.h);
   ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
   ctx.lineWidth = 2;
-  ctx.strokeRect(player.x + 1, player.y + 1, player.w - 2, player.h - 2);
+  ctx.strokeRect(-player.w / 2 + 1, -player.h / 2 + 1, player.w - 2, player.h - 2);
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.28)';
+  ctx.fillRect(-player.w / 2 + 4, -player.h / 2 + 4, player.w - 8, 4);
+  ctx.fillStyle = '#f7c948';
+  ctx.fillRect(-3, -player.h / 2 + 2, 6, 5);
   ctx.fillStyle = '#0b1022';
-  ctx.fillRect(player.x + 6, player.y + 8, 4, 4);
-  ctx.fillRect(player.x + player.w - 10, player.y + 8, 4, 4);
+  ctx.fillRect(-player.w / 2 + 6, -player.h / 2 + 8, 4, 4);
+  ctx.fillRect(player.w / 2 - 10, -player.h / 2 + 8, 4, 4);
   ctx.restore();
 }
 

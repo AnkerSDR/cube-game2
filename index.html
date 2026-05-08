@@ -22,11 +22,18 @@
         <div id="time-status">Время: 0:00.0</div>
         <div id="best-status">Рекорд: --</div>
         <div id="hint">Подсказка</div>
+        <button id="pause-btn" type="button" aria-label="Пауза" title="Пауза">Ⅱ</button>
+        <button id="fullscreen-btn" type="button" aria-label="Полноэкранный режим" title="Полноэкранный режим">⛶</button>
       </div>
 
       <div id="overlay">
         <div class="panel">
           <div class="panel-title">Управление</div>
+          <label class="name-field" for="player-name">
+            <span>Ник игрока</span>
+            <input id="player-name" type="text" maxlength="16" autocomplete="nickname" placeholder="Введи ник" />
+            <span id="name-error" class="field-error" aria-live="polite"></span>
+          </label>
           <div class="panel-text">
             ПК: `A/D` или `←/→` — движение, `W` или `Space` — прыжок
           </div>
@@ -34,6 +41,10 @@
             Телефон: кнопки внизу экрана
           </div>
           <button id="start-btn">Начать приключение</button>
+          <div class="leaderboard">
+            <div class="leaderboard-title">Лидеры</div>
+            <ol id="leaderboard-start"></ol>
+          </div>
         </div>
       </div>
 
@@ -45,8 +56,22 @@
           </div>
           <div class="panel-text" id="win-time">Время: 0:00.0</div>
           <div class="panel-text" id="win-best">Рекорд: --</div>
+          <div class="leaderboard">
+            <div class="leaderboard-title">Лидеры</div>
+            <ol id="leaderboard-win"></ol>
+          </div>
           <div class="panel-text">Хочешь начать заново?</div>
           <button id="restart-btn">Сыграть еще раз</button>
+          <button id="menu-btn" class="secondary-btn" type="button">В главное меню</button>
+        </div>
+      </div>
+
+      <div id="pause-overlay" class="hidden">
+        <div class="panel">
+          <div class="panel-title">Пауза</div>
+          <div class="panel-text">Прохождение остановлено.</div>
+          <button id="resume-btn" type="button">Продолжить</button>
+          <button id="pause-menu-btn" class="secondary-btn" type="button">В главное меню</button>
         </div>
       </div>
 
