@@ -127,6 +127,8 @@ let levelState = null;
 let orderProgress = 0;
 let gameRunning = false;
 let lastTime = 0;
+let animationFrameId = null;
+let frameAccumulator = 0;
 let globalTime = 0;
 let pauseStarted = 0;
 let stars = [];
@@ -139,6 +141,8 @@ const BEST_KEY = 'caves_best_time';
 const LEADERBOARD_KEY = 'caves_leaderboard';
 const PLAYER_NAME_KEY = 'caves_player_name';
 const MAX_LEADERS = 7;
+const FRAME_MS = 1000 / 60;
+const MAX_FRAME_ACCUMULATOR = FRAME_MS * 5;
 
 function mulberry32(seed) {
   return function () {
@@ -301,6 +305,10 @@ function cleanPlayerName(name) {
   return name.trim().replace(/\s+/g, ' ').slice(0, 16);
 }
 
+function getLeaderboardNameKey(name) {
+  return cleanPlayerName(name).toLocaleLowerCase('ru-RU');
+}
+
 function clearInput() {
   input.left = false;
   input.right = false;
@@ -332,27 +340,51 @@ function loadLeaderboard() {
   try {
     const records = JSON.parse(raw);
     if (!Array.isArray(records)) return [];
-    return records
-      .filter((record) => record && typeof record.name === 'string' && Number.isFinite(record.time))
-      .sort((a, b) => a.time - b.time)
-      .slice(0, MAX_LEADERS);
+    const bestByPlayer = new Map();
+    for (const record of records) {
+      if (!record || typeof record.name !== 'string' || !Number.isFinite(record.time)) continue;
+      const name = cleanPlayerName(record.name);
+      const key = getLeaderboardNameKey(name);
+      if (!key) continue;
+
+      const existing = bestByPlayer.get(key);
+      if (!existing || record.time < existing.time) {
+        bestByPlayer.set(key, {
+          name,
+          time: record.time,
+          date: typeof record.date === 'string' ? record.date : ''
+        });
+      }
+    }
+
+    return [...bestByPlayer.values()].sort((a, b) => a.time - b.time).slice(0, MAX_LEADERS);
   } catch (error) {
     return [];
   }
 }
 
 function saveLeaderboard(records) {
-  localStorage.setItem(LEADERBOARD_KEY, JSON.stringify(records.slice(0, MAX_LEADERS)));
+  localStorage.setItem(LEADERBOARD_KEY, JSON.stringify(records.sort((a, b) => a.time - b.time).slice(0, MAX_LEADERS)));
 }
 
 function addLeaderboardResult(name, time) {
   const records = loadLeaderboard();
-  records.push({
-    name,
-    time,
-    date: new Date().toISOString()
-  });
-  records.sort((a, b) => a.time - b.time);
+  const cleanName = cleanPlayerName(name);
+  const playerKey = getLeaderboardNameKey(cleanName);
+  const existing = records.find((record) => getLeaderboardNameKey(record.name) === playerKey);
+
+  if (!existing) {
+    records.push({
+      name: cleanName,
+      time,
+      date: new Date().toISOString()
+    });
+  } else if (time < existing.time) {
+    existing.name = cleanName;
+    existing.time = time;
+    existing.date = new Date().toISOString();
+  }
+
   saveLeaderboard(records);
   return records.slice(0, MAX_LEADERS);
 }
@@ -455,7 +487,7 @@ function checkSpikes() {
   }
 }
 
-function update(dt) {
+function update() {
   const speed = 3.2;
   const gravity = 0.6;
   const jumpPower = -11;
@@ -625,16 +657,26 @@ function loop(timestamp) {
   if (!gameRunning) return;
   globalTime = timestamp;
   currentTime = (timestamp - runStart) / 1000;
-  const dt = (timestamp - lastTime) / 16.67;
+  const elapsed = lastTime ? timestamp - lastTime : FRAME_MS;
   lastTime = timestamp;
-  update(dt);
+
+  frameAccumulator += Math.min(elapsed, MAX_FRAME_ACCUMULATOR);
+  while (frameAccumulator >= FRAME_MS) {
+    update();
+    frameAccumulator -= FRAME_MS;
+  }
+
   draw();
   updateHud();
-  requestAnimationFrame(loop);
+  animationFrameId = requestAnimationFrame(loop);
 }
 
 function startGame() {
   if (!requirePlayerName()) return;
+  if (animationFrameId !== null) {
+    cancelAnimationFrame(animationFrameId);
+    animationFrameId = null;
+  }
   clearInput();
   overlay.classList.add('hidden');
   winOverlay.classList.add('hidden');
@@ -643,12 +685,17 @@ function startGame() {
   runStart = performance.now();
   currentTime = 0;
   lastTime = performance.now();
+  frameAccumulator = 0;
   updateHud();
-  requestAnimationFrame(loop);
+  animationFrameId = requestAnimationFrame(loop);
 }
 
 function showWin() {
   gameRunning = false;
+  if (animationFrameId !== null) {
+    cancelAnimationFrame(animationFrameId);
+    animationFrameId = null;
+  }
   clearInput();
   currentTime = (performance.now() - runStart) / 1000;
   if (bestTime === null || currentTime < bestTime) {
@@ -672,6 +719,10 @@ function restartGame() {
 function pauseGame() {
   if (!gameRunning) return;
   gameRunning = false;
+  if (animationFrameId !== null) {
+    cancelAnimationFrame(animationFrameId);
+    animationFrameId = null;
+  }
   pauseStarted = performance.now();
   clearInput();
   pauseOverlay.classList.remove('hidden');
@@ -681,13 +732,18 @@ function resumeGame() {
   if (gameRunning || pauseOverlay.classList.contains('hidden')) return;
   runStart += performance.now() - pauseStarted;
   lastTime = performance.now();
+  frameAccumulator = 0;
   gameRunning = true;
   pauseOverlay.classList.add('hidden');
-  requestAnimationFrame(loop);
+  animationFrameId = requestAnimationFrame(loop);
 }
 
 function showMainMenu() {
   gameRunning = false;
+  if (animationFrameId !== null) {
+    cancelAnimationFrame(animationFrameId);
+    animationFrameId = null;
+  }
   clearInput();
   levelIndex = 0;
   currentTime = 0;
