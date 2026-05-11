@@ -85,6 +85,10 @@ header {
   text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
 }
 
+#game-wrap.paused #hud {
+  z-index: 6;
+}
+
 #hint {
   color: var(--accent-2);
   max-width: 260px;

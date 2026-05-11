@@ -31,7 +31,7 @@ const VIEW_H = canvas.height;
 const levels = [
   {
     name: 'Пещера Ветра',
-    hint: 'Собери все руны, чтобы открыть ворота.',
+    hint: 'Собери все руны, чтобы открыть ворота. Батуты подбрасывают выше обычного прыжка.',
     orderRequired: false,
     map: [
       '##############################',
@@ -47,13 +47,13 @@ const levels = [
       '#............................#',
       '#............####............#',
       '#.....................####...#',
-      '#.............................#',
+      '#...........T................#',
       '##############################'
     ]
   },
   {
     name: 'Пещера Эха',
-    hint: 'Табличка: руны нужно брать в порядке 1 → 2 → 3.',
+    hint: 'Табличка: руны нужно брать в порядке 1 → 2 → 3. Батут поможет добраться выше.',
     orderRequired: true,
     map: [
       '##############################',
@@ -67,14 +67,14 @@ const levels = [
       '#.....................3......#',
       '#............#..#............#',
       '#...............^............#',
-      '#.....###....####............#',
+      '#.....###....#TT#............#',
       '#............................#',
       '##############################'
     ]
   },
   {
     name: 'Пещера Огня',
-    hint: 'Подсказка: сначала 1, потом 2, затем 3. Шипы сбрасывают попытку.',
+    hint: 'Подсказка: сначала 1, потом 2, затем 3. Шипы сбрасывают попытку, батуты спасают высоту.',
     orderRequired: true,
     map: [
       '##############################',
@@ -84,12 +84,75 @@ const levels = [
       '#............####............#',
       '#.................2...#..B...#',
       '#..####......................#',
-      '#.......###.....####.........#',
+      '#.......###.....####T........#',
       '#.....................3......#',
       '#............####.....#......#',
       '#............................#',
       '#............####............#',
       '#^^^^^^^^^^^^^^^^^^^^^^^^^^^^#',
+      '##############################'
+    ]
+  },
+  {
+    name: 'Пещера Переворота',
+    hint: 'Красный портал переворачивает гравитацию, синий возвращает обычную.',
+    orderRequired: false,
+    map: [
+      '##############################',
+      '#...........K............O...#',
+      '#............................#',
+      '#............................#',
+      '#............................#',
+      '#.......R....................#',
+      '#............................#',
+      '#............................#',
+      '#............................#',
+      '#............................#',
+      '#............................#',
+      '#..P....T.................E..#',
+      '#............................#',
+      '##############################'
+    ]
+  },
+  {
+    name: 'Пещера Прыжка',
+    hint: 'Возьми руны по порядку: батут забросит в красный портал, синий вернет вниз.',
+    orderRequired: true,
+    map: [
+      '##############################',
+      '#..............2.........O...#',
+      '#............................#',
+      '#............................#',
+      '#............................#',
+      '#............R...............#',
+      '#............................#',
+      '#............................#',
+      '#............................#',
+      '#............................#',
+      '#....1...............3....E..#',
+      '#..P.......T.................#',
+      '#............................#',
+      '##############################'
+    ]
+  },
+  {
+    name: 'Пещера Невесомости',
+    hint: 'Батуты дают высоту, порталы меняют направление падения.',
+    orderRequired: true,
+    map: [
+      '##############################',
+      '#.......2.............O......#',
+      '#............................#',
+      '#............................#',
+      '#............................#',
+      '#..........R.................#',
+      '#............................#',
+      '#............................#',
+      '#............................#',
+      '#............................#',
+      '#..P..1....T............3.E..#',
+      '#............................#',
+      '#............................#',
       '##############################'
     ]
   }
@@ -103,6 +166,8 @@ const input = {
 
 const JUMP_BUFFER_FRAMES = 6;
 const COYOTE_FRAMES = 6;
+const TRAMPOLINE_POWER = -16;
+const MAX_FALL_SPEED = 14;
 let jumpBuffer = 0;
 let coyoteTime = 0;
 
@@ -119,7 +184,8 @@ const player = {
   rotation: 0,
   targetRotation: 0,
   spinDirection: 1,
-  spinning: false
+  spinning: false,
+  gravityDir: 1
 };
 
 let levelIndex = 0;
@@ -143,6 +209,17 @@ const PLAYER_NAME_KEY = 'caves_player_name';
 const MAX_LEADERS = 7;
 const FRAME_MS = 1000 / 60;
 const MAX_FRAME_ACCUMULATOR = FRAME_MS * 5;
+const DEV_SLOW_FACTOR = 0.35;
+const TRAJECTORY_LIMIT = 180;
+let devModeActive = false;
+let devSlowMotion = false;
+let devTrajectory = false;
+let devImmortal = false;
+let devHitboxes = false;
+let devInfiniteJump = false;
+let runUsesDevTools = false;
+let devUnlockStep = 0;
+let trajectoryPoints = [];
 
 function mulberry32(seed) {
   return function () {
@@ -242,6 +319,7 @@ function resetLevel(fullReset) {
   player.rotation = 0;
   player.targetRotation = 0;
   player.spinning = false;
+  player.gravityDir = 1;
   if (fullReset) {
     orderProgress = 0;
   }
@@ -256,7 +334,7 @@ function isSolid(tx, ty) {
     return true;
   }
   const cell = levelState.grid[ty][tx];
-  return cell === '#' || cell === 'B';
+  return cell === '#' || cell === 'B' || cell === 'T';
 }
 
 function isSpike(tx, ty) {
@@ -264,6 +342,21 @@ function isSpike(tx, ty) {
     return false;
   }
   return levelState.grid[ty][tx] === '^';
+}
+
+function isTrampoline(tx, ty) {
+  if (ty < 0 || ty >= levelState.grid.length || tx < 0 || tx >= levelState.grid[0].length) {
+    return false;
+  }
+  return levelState.grid[ty][tx] === 'T';
+}
+
+function getPortal(tx, ty) {
+  if (ty < 0 || ty >= levelState.grid.length || tx < 0 || tx >= levelState.grid[0].length) {
+    return null;
+  }
+  const cell = levelState.grid[ty][tx];
+  return cell === 'R' || cell === 'O' ? cell : null;
 }
 
 function collectRune(rune) {
@@ -314,6 +407,64 @@ function clearInput() {
   input.right = false;
   input.jump = false;
   jumpBuffer = 0;
+}
+
+function markDevRun() {
+  runUsesDevTools = true;
+}
+
+function unlockDevMode() {
+  if (devModeActive) return;
+  devModeActive = true;
+  markDevRun();
+}
+
+function resetTrajectory() {
+  trajectoryPoints = [];
+}
+
+function trackTrajectory() {
+  if (!devTrajectory || !gameRunning) return;
+  trajectoryPoints.push({
+    x: player.x + player.w / 2,
+    y: player.y + player.h / 2
+  });
+  if (trajectoryPoints.length > TRAJECTORY_LIMIT) {
+    trajectoryPoints.shift();
+  }
+}
+
+function switchDevLevel(direction) {
+  if (!devModeActive) return;
+  markDevRun();
+  levelIndex = (levelIndex + direction + levels.length) % levels.length;
+  currentTime = 0;
+  runStart = performance.now();
+  lastTime = performance.now();
+  frameAccumulator = 0;
+  clearInput();
+  resetLevel(true);
+  resetTrajectory();
+}
+
+function handleDevUnlockAction(action) {
+  if (devModeActive) return;
+
+  if (devUnlockStep === 0 && action === 'fullscreen') {
+    devUnlockStep = 1;
+    return;
+  }
+  if (devUnlockStep === 1 && action === 'pause') {
+    devUnlockStep = 2;
+    return;
+  }
+  if (devUnlockStep === 2 && action === 'pause') {
+    unlockDevMode();
+    devUnlockStep = 0;
+    return;
+  }
+
+  devUnlockStep = action === 'fullscreen' ? 1 : 0;
 }
 
 function requirePlayerName() {
@@ -449,13 +600,22 @@ function resolveCollisions(axis) {
       }
     }
   } else {
+    player.onGround = false;
     if (player.vy > 0) {
-      player.onGround = false;
       for (let x = left; x <= right; x++) {
         if (isSolid(x, bottom)) {
           player.y = bottom * TILE - player.h;
-          player.vy = 0;
-          player.onGround = true;
+          if (isTrampoline(x, bottom)) {
+            player.vy = TRAMPOLINE_POWER;
+            player.onGround = false;
+            player.spinDirection = player.vx < 0 ? -1 : 1;
+            player.targetRotation += player.spinDirection * Math.PI / 2;
+            player.spinning = true;
+            coyoteTime = 0;
+          } else {
+            player.vy = 0;
+            player.onGround = player.gravityDir === 1;
+          }
           break;
         }
       }
@@ -463,7 +623,17 @@ function resolveCollisions(axis) {
       for (let x = left; x <= right; x++) {
         if (isSolid(x, top)) {
           player.y = (top + 1) * TILE;
-          player.vy = 0;
+          if (isTrampoline(x, top)) {
+            player.vy = -TRAMPOLINE_POWER;
+            player.onGround = false;
+            player.spinDirection = player.vx < 0 ? -1 : 1;
+            player.targetRotation += player.spinDirection * Math.PI / 2;
+            player.spinning = true;
+            coyoteTime = 0;
+          } else {
+            player.vy = 0;
+            player.onGround = player.gravityDir === -1;
+          }
           break;
         }
       }
@@ -472,6 +642,8 @@ function resolveCollisions(axis) {
 }
 
 function checkSpikes() {
+  if (devModeActive && devImmortal) return;
+
   const left = Math.floor(player.x / TILE);
   const right = Math.floor((player.x + player.w - 1) / TILE);
   const top = Math.floor(player.y / TILE);
@@ -483,6 +655,29 @@ function checkSpikes() {
         resetLevel(true);
         return;
       }
+    }
+  }
+}
+
+function checkPortals() {
+  const left = Math.floor(player.x / TILE);
+  const right = Math.floor((player.x + player.w - 1) / TILE);
+  const top = Math.floor(player.y / TILE);
+  const bottom = Math.floor((player.y + player.h - 1) / TILE);
+
+  for (let y = top; y <= bottom; y++) {
+    for (let x = left; x <= right; x++) {
+      const portal = getPortal(x, y);
+      if (!portal) continue;
+
+      const nextGravity = portal === 'R' ? -1 : 1;
+      if (player.gravityDir !== nextGravity) {
+        player.gravityDir = nextGravity;
+        player.vy = 0;
+        player.onGround = false;
+        coyoteTime = 0;
+      }
+      return;
     }
   }
 }
@@ -507,8 +702,8 @@ function update() {
     jumpBuffer -= 1;
   }
 
-  if (jumpBuffer > 0 && coyoteTime > 0) {
-    player.vy = jumpPower;
+  if (jumpBuffer > 0 && (coyoteTime > 0 || (devModeActive && devInfiniteJump))) {
+    player.vy = jumpPower * player.gravityDir;
     player.onGround = false;
     player.spinDirection = player.vx < 0 ? -1 : 1;
     player.targetRotation += player.spinDirection * Math.PI / 2;
@@ -523,8 +718,9 @@ function update() {
     player.rotation += step;
   }
 
-  player.vy += gravity;
-  if (player.vy > 14) player.vy = 14;
+  player.vy += gravity * player.gravityDir;
+  if (player.vy > MAX_FALL_SPEED) player.vy = MAX_FALL_SPEED;
+  if (player.vy < -MAX_FALL_SPEED) player.vy = -MAX_FALL_SPEED;
 
   player.x += player.vx;
   resolveCollisions('x');
@@ -537,6 +733,7 @@ function update() {
   }
 
   checkSpikes();
+  checkPortals();
 
   for (const rune of levelState.runes) {
     if (rune.collected) continue;
@@ -604,6 +801,40 @@ function draw() {
         ctx.fillStyle = 'rgba(92, 225, 230, 0.3)';
         ctx.fillRect(x * TILE + 6, y * TILE + 6, TILE - 12, TILE - 12);
       }
+      if (cell === 'T') {
+        const tileX = x * TILE;
+        const tileY = y * TILE;
+        drawTile(tileX, tileY, '#2f6f5f', '#1e4d43');
+        ctx.fillStyle = '#7bff83';
+        ctx.fillRect(tileX + 4, tileY + 6, TILE - 8, 6);
+        ctx.fillStyle = '#f7c948';
+        ctx.fillRect(tileX + 7, tileY + 13, TILE - 14, 4);
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.25)';
+        ctx.fillRect(tileX + 6, tileY + 4, TILE - 12, 2);
+      }
+      if (cell === 'R' || cell === 'O') {
+        const portalX = x * TILE + TILE / 2;
+        const portalY = y * TILE + TILE / 2;
+        const isRed = cell === 'R';
+        const portalColor = isRed ? '#ff5f6d' : '#5ce1e6';
+        const portalCore = isRed ? '#ffd1d6' : '#d6fbff';
+        const pulse = 0.5 + Math.sin(globalTime / 160 + x + y) * 0.5;
+
+        ctx.save();
+        ctx.shadowColor = portalColor;
+        ctx.shadowBlur = 18;
+        ctx.strokeStyle = portalColor;
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.ellipse(portalX, portalY, 9 + pulse * 2, 14, 0, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.fillStyle = portalCore;
+        ctx.globalAlpha = 0.25 + pulse * 0.25;
+        ctx.beginPath();
+        ctx.ellipse(portalX, portalY, 5 + pulse * 2, 10, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
       if (cell === '^') {
         const spikeX = x * TILE;
         const spikeY = y * TILE;
@@ -648,6 +879,8 @@ function draw() {
   ctx.restore();
 
   drawPlayer();
+  drawTrajectory();
+  drawHitboxes();
 
   ctx.restore();
   drawVignette();
@@ -660,9 +893,11 @@ function loop(timestamp) {
   const elapsed = lastTime ? timestamp - lastTime : FRAME_MS;
   lastTime = timestamp;
 
-  frameAccumulator += Math.min(elapsed, MAX_FRAME_ACCUMULATOR);
+  const timeScale = devModeActive && devSlowMotion ? DEV_SLOW_FACTOR : 1;
+  frameAccumulator += Math.min(elapsed * timeScale, MAX_FRAME_ACCUMULATOR);
   while (frameAccumulator >= FRAME_MS) {
     update();
+    trackTrajectory();
     frameAccumulator -= FRAME_MS;
   }
 
@@ -681,31 +916,37 @@ function startGame() {
   overlay.classList.add('hidden');
   winOverlay.classList.add('hidden');
   pauseOverlay.classList.add('hidden');
+  gameWrap.classList.remove('paused');
   gameRunning = true;
   runStart = performance.now();
   currentTime = 0;
   lastTime = performance.now();
   frameAccumulator = 0;
+  runUsesDevTools = devModeActive;
+  resetTrajectory();
   updateHud();
   animationFrameId = requestAnimationFrame(loop);
 }
 
 function showWin() {
   gameRunning = false;
+  gameWrap.classList.remove('paused');
   if (animationFrameId !== null) {
     cancelAnimationFrame(animationFrameId);
     animationFrameId = null;
   }
   clearInput();
   currentTime = (performance.now() - runStart) / 1000;
-  if (bestTime === null || currentTime < bestTime) {
+  if (!runUsesDevTools && (bestTime === null || currentTime < bestTime)) {
     bestTime = currentTime;
     localStorage.setItem(BEST_KEY, String(bestTime));
   }
-  addLeaderboardResult(currentPlayerName, currentTime);
-  renderLeaderboards();
+  if (!runUsesDevTools) {
+    addLeaderboardResult(currentPlayerName, currentTime);
+    renderLeaderboards();
+  }
   winTime.textContent = `Время: ${formatTime(currentTime)}`;
-  winBest.textContent = `Рекорд: ${formatTime(bestTime)}`;
+  winBest.textContent = `Рекорд: ${bestTime !== null ? formatTime(bestTime) : '--'}`;
   winOverlay.classList.remove('hidden');
 }
 
@@ -717,8 +958,10 @@ function restartGame() {
 }
 
 function pauseGame() {
+  handleDevUnlockAction('pause');
   if (!gameRunning) return;
   gameRunning = false;
+  gameWrap.classList.add('paused');
   if (animationFrameId !== null) {
     cancelAnimationFrame(animationFrameId);
     animationFrameId = null;
@@ -734,12 +977,14 @@ function resumeGame() {
   lastTime = performance.now();
   frameAccumulator = 0;
   gameRunning = true;
+  gameWrap.classList.remove('paused');
   pauseOverlay.classList.add('hidden');
   animationFrameId = requestAnimationFrame(loop);
 }
 
 function showMainMenu() {
   gameRunning = false;
+  gameWrap.classList.remove('paused');
   if (animationFrameId !== null) {
     cancelAnimationFrame(animationFrameId);
     animationFrameId = null;
@@ -762,6 +1007,7 @@ function enterFullscreen() {
 }
 
 function toggleFullscreen() {
+  handleDevUnlockAction('fullscreen');
   if (document.fullscreenElement) {
     document.exitFullscreen();
   } else {
@@ -782,6 +1028,59 @@ function setupInput() {
       }
       return;
     }
+    if (devModeActive) {
+      if (event.code === 'ArrowLeft') {
+        event.preventDefault();
+        switchDevLevel(-1);
+        return;
+      }
+      if (event.code === 'ArrowRight') {
+        event.preventDefault();
+        switchDevLevel(1);
+        return;
+      }
+      if (event.code === 'ControlLeft') {
+        event.preventDefault();
+        devSlowMotion = true;
+        markDevRun();
+        return;
+      }
+      if (event.code === 'ControlRight') {
+        event.preventDefault();
+        if (!event.repeat) {
+          devTrajectory = !devTrajectory;
+          markDevRun();
+          if (!devTrajectory) {
+            resetTrajectory();
+          }
+        }
+        return;
+      }
+      if (event.code === 'ArrowUp') {
+        event.preventDefault();
+        if (!event.repeat) {
+          devImmortal = !devImmortal;
+          markDevRun();
+        }
+        return;
+      }
+      if (event.code === 'KeyH') {
+        event.preventDefault();
+        if (!event.repeat) {
+          devHitboxes = !devHitboxes;
+          markDevRun();
+        }
+        return;
+      }
+      if (event.code === 'KeyJ') {
+        event.preventDefault();
+        if (!event.repeat) {
+          devInfiniteJump = !devInfiniteJump;
+          markDevRun();
+        }
+        return;
+      }
+    }
     if (event.code === 'Escape') {
       if (gameRunning) {
         pauseGame();
@@ -790,9 +1089,9 @@ function setupInput() {
       }
       return;
     }
-    if (event.code === 'ArrowLeft' || event.code === 'KeyA') input.left = true;
-    if (event.code === 'ArrowRight' || event.code === 'KeyD') input.right = true;
-    if (event.code === 'ArrowUp' || event.code === 'KeyW' || event.code === 'Space') {
+    if (event.code === 'KeyA') input.left = true;
+    if (event.code === 'KeyD') input.right = true;
+    if (event.code === 'KeyW' || event.code === 'Space') {
       if (!input.jump) {
         requestJump();
       }
@@ -801,9 +1100,12 @@ function setupInput() {
   });
 
   window.addEventListener('keyup', (event) => {
-    if (event.code === 'ArrowLeft' || event.code === 'KeyA') input.left = false;
-    if (event.code === 'ArrowRight' || event.code === 'KeyD') input.right = false;
-    if (event.code === 'ArrowUp' || event.code === 'KeyW' || event.code === 'Space') input.jump = false;
+    if (event.code === 'ControlLeft') {
+      devSlowMotion = false;
+    }
+    if (event.code === 'KeyA') input.left = false;
+    if (event.code === 'KeyD') input.right = false;
+    if (event.code === 'KeyW' || event.code === 'Space') input.jump = false;
   });
 
   const btnLeft = document.getElementById('btn-left');
@@ -934,6 +1236,73 @@ function drawPlayer() {
   ctx.fillStyle = '#0b1022';
   ctx.fillRect(-player.w / 2 + 6, -player.h / 2 + 8, 4, 4);
   ctx.fillRect(player.w / 2 - 10, -player.h / 2 + 8, 4, 4);
+  ctx.restore();
+}
+
+function drawTrajectory() {
+  if (!devTrajectory || trajectoryPoints.length < 2) return;
+
+  ctx.save();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = 'rgba(247, 201, 72, 0.8)';
+  ctx.beginPath();
+  for (let i = 0; i < trajectoryPoints.length; i++) {
+    const point = trajectoryPoints[i];
+    if (i === 0) {
+      ctx.moveTo(point.x, point.y);
+    } else {
+      ctx.lineTo(point.x, point.y);
+    }
+  }
+  ctx.stroke();
+
+  const last = trajectoryPoints[trajectoryPoints.length - 1];
+  ctx.fillStyle = 'rgba(247, 201, 72, 0.9)';
+  ctx.beginPath();
+  ctx.arc(last.x, last.y, 3, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawHitboxes() {
+  if (!devModeActive || !devHitboxes) return;
+
+  ctx.save();
+  ctx.lineWidth = 2;
+
+  ctx.strokeStyle = 'rgba(92, 225, 230, 0.95)';
+  ctx.strokeRect(player.x, player.y, player.w, player.h);
+
+  ctx.strokeStyle = 'rgba(247, 201, 72, 0.9)';
+  for (const rune of levelState.runes) {
+    if (!rune.collected) {
+      ctx.strokeRect(rune.x, rune.y, 16, 16);
+    }
+  }
+
+  const exit = levelState.exit;
+  ctx.strokeStyle = 'rgba(123, 255, 131, 0.9)';
+  ctx.strokeRect(exit.x, exit.y, TILE, TILE);
+
+  for (let y = 0; y < levelState.grid.length; y++) {
+    for (let x = 0; x < levelState.grid[y].length; x++) {
+      const cell = levelState.grid[y][x];
+      const tileX = x * TILE;
+      const tileY = y * TILE;
+
+      if (cell === '#' || cell === 'B' || cell === 'T') {
+        ctx.strokeStyle = cell === 'T' ? 'rgba(123, 255, 131, 0.8)' : 'rgba(255, 255, 255, 0.28)';
+        ctx.strokeRect(tileX, tileY, TILE, TILE);
+      } else if (cell === '^') {
+        ctx.strokeStyle = 'rgba(255, 95, 109, 0.9)';
+        ctx.strokeRect(tileX, tileY, TILE, TILE);
+      } else if (cell === 'R' || cell === 'O') {
+        ctx.strokeStyle = cell === 'R' ? 'rgba(255, 95, 109, 0.95)' : 'rgba(92, 225, 230, 0.95)';
+        ctx.strokeRect(tileX, tileY, TILE, TILE);
+      }
+    }
+  }
+
   ctx.restore();
 }
 
